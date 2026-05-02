@@ -220,7 +220,11 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
                 </ul>`}
         ${cfg.show_add_input && cfg.entity ? this._renderAddRow() : nothing}
       </ha-card>
-      ${customStyle ? html`<style>${customStyle}</style>` : nothing}
+      ${customStyle
+        ? html`<style>
+            ${customStyle}
+          </style>`
+        : nothing}
     `;
   }
 
@@ -245,10 +249,7 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
           void this._toggleItem(item);
         }}
       >
-        <ha-checkbox
-          .checked=${completed}
-          @change=${() => this._toggleItem(item)}
-        ></ha-checkbox>
+        <ha-checkbox .checked=${completed} @change=${() => this._toggleItem(item)}></ha-checkbox>
         <span class="summary">${item.summary}</span>
         <ha-icon-button
           class="delete"

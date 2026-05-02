@@ -14,7 +14,10 @@ const STARTER_ITEMS = [
   { uid: "4", summary: "Coffee beans", status: "completed" },
 ];
 
-export function createMockHass({ entityId = "todo.shopping_list", initialItems = STARTER_ITEMS } = {}) {
+export function createMockHass({
+  entityId = "todo.shopping_list",
+  initialItems = STARTER_ITEMS,
+} = {}) {
   const state = {
     items: initialItems.map((i) => ({ ...i })),
     subs: new Set(),

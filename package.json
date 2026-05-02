@@ -9,7 +9,14 @@
     "watch": "rollup -c --watch",
     "serve": "node dev/serve.mjs",
     "dev": "npm run build && (npm run watch & npm run serve)",
-    "format": "prettier --write \"src/**/*.{ts,js,json,md}\" \"dev/**/*.{js,mjs,html}\""
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.{ts,js,json,md}\" \"dev/**/*.{js,mjs,html}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json,md}\" \"dev/**/*.{js,mjs,html}\"",
+    "check": "npm run typecheck && npm run format:check",
+    "prepare": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npm run check"
   },
   "keywords": [
     "home-assistant",
@@ -35,6 +42,7 @@
     "@rollup/plugin-typescript": "^12.3.0",
     "prettier": "^3.8.3",
     "rollup": "^4.60.2",
+    "simple-git-hooks": "^2.13.1",
     "tslib": "^2.8.1",
     "typescript": "^6.0.3"
   }

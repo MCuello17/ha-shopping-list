@@ -74,7 +74,9 @@ class HaTextfield extends HTMLElement {
       this.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     });
     this._input.addEventListener("keydown", (ev) => {
-      this.dispatchEvent(new KeyboardEvent("keydown", { key: ev.key, bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new KeyboardEvent("keydown", { key: ev.key, bubbles: true, composed: true }),
+      );
     });
   }
   set value(v) {
@@ -210,7 +212,10 @@ class HaForm extends HTMLElement {
           input = `<input type="checkbox" data-name="${item.name}" ${val ? "checked" : ""} />`;
         } else if (sel.select) {
           const opts = (sel.select.options || [])
-            .map((o) => `<option value="${o.value}" ${o.value === val ? "selected" : ""}>${o.label}</option>`)
+            .map(
+              (o) =>
+                `<option value="${o.value}" ${o.value === val ? "selected" : ""}>${o.label}</option>`,
+            )
             .join("");
           input = `<select data-name="${item.name}">${opts}</select>`;
         } else {
