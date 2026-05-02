@@ -206,16 +206,16 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
     const customStyle = this._extractCustomStyle();
 
     return html`
-      <ha-card>
+      <ha-card class="sl-card">
         ${cfg.show_header ? this._renderHeader() : nothing}
-        ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
+        ${this._error ? html`<div class="sl-error">${this._error}</div>` : nothing}
         ${!cfg.entity
-          ? html`<div class="empty">No todo entity selected. Open the editor to pick one.</div>`
+          ? html`<div class="sl-empty">No todo entity selected. Open the editor to pick one.</div>`
           : this._loading && this._items.length === 0
-            ? html`<div class="empty">Loading…</div>`
+            ? html`<div class="sl-empty">Loading…</div>`
             : items.length === 0
-              ? html`<div class="empty">${cfg.empty_message}</div>`
-              : html`<ul class="items">
+              ? html`<div class="sl-empty">${cfg.empty_message}</div>`
+              : html`<ul class="sl-list">
                   ${items.map((i) => this._renderItem(i))}
                 </ul>`}
         ${cfg.show_add_input && cfg.entity ? this._renderAddRow() : nothing}
@@ -231,9 +231,9 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   private _renderHeader(): TemplateResult {
     const cfg = this._config!;
     return html`
-      <div class="header">
-        ${cfg.icon ? html`<ha-icon .icon=${cfg.icon}></ha-icon>` : nothing}
-        <span>${cfg.title}</span>
+      <div class="sl-header">
+        ${cfg.icon ? html`<ha-icon class="sl-icon" .icon=${cfg.icon}></ha-icon>` : nothing}
+        <span class="sl-title">${cfg.title}</span>
       </div>
     `;
   }
@@ -242,17 +242,21 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
     const completed = item.status === "completed";
     return html`
       <li
-        class="item ${completed ? "completed" : ""}"
+        class="sl-item ${completed ? "sl-item--completed" : ""}"
         @click=${(ev: MouseEvent) => {
           // Avoid double-toggle when clicking the checkbox itself.
           if ((ev.target as HTMLElement).tagName === "HA-CHECKBOX") return;
           void this._toggleItem(item);
         }}
       >
-        <ha-checkbox .checked=${completed} @change=${() => this._toggleItem(item)}></ha-checkbox>
-        <span class="summary">${item.summary}</span>
+        <ha-checkbox
+          class="sl-checkbox"
+          .checked=${completed}
+          @change=${() => this._toggleItem(item)}
+        ></ha-checkbox>
+        <span class="sl-summary">${item.summary}</span>
         <ha-icon-button
-          class="delete"
+          class="sl-delete-button"
           .label=${"Remove"}
           @click=${(ev: MouseEvent) => {
             ev.stopPropagation();
@@ -267,20 +271,32 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
 
   private _renderAddRow(): TemplateResult {
     const cfg = this._config!;
+    const canAdd = this._draft.trim().length > 0;
     return html`
-      <div class="add-row">
-        <ha-textfield
+      <div class="sl-add-row">
+        <input
+          class="sl-input"
+          type="text"
+          placeholder="Add an item…"
           .value=${this._draft}
-          .placeholder=${"Add an item…"}
-          @input=${(ev: Event) => (this._draft = (ev.target as HTMLInputElement).value)}
+          @input=${(ev: Event) => {
+            this._draft = (ev.target as HTMLInputElement).value;
+          }}
           @keydown=${(ev: KeyboardEvent) => {
             if (ev.key === "Enter") {
               ev.preventDefault();
               void this._addItem();
             }
           }}
-        ></ha-textfield>
-        <mwc-button raised @click=${() => this._addItem()}>${cfg.add_button_label}</mwc-button>
+        />
+        <button
+          class="sl-add-button"
+          type="button"
+          ?disabled=${!canAdd}
+          @click=${() => this._addItem()}
+        >
+          ${cfg.add_button_label}
+        </button>
       </div>
     `;
   }

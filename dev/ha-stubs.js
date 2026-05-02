@@ -91,14 +91,34 @@ class HaTextfield extends HTMLElement {
 }
 customElements.define("ha-textfield", HaTextfield);
 
+/**
+ * Renders Material Design Icons via the @mdi/font webfont.
+ *
+ * Why shadow DOM here: <ha-icon> is rendered inside the card's own
+ * Lit shadow root. Stylesheets in the document <head> do NOT pierce
+ * shadow DOM boundaries, so the global @mdi/font CSS would never reach
+ * an icon nested in the card. Each <ha-icon> therefore needs its own
+ * shadow root with a <link> to the MDI stylesheet (browsers cache the
+ * actual CSS file across all instances).
+ *
+ * Falls back to showing the icon name as text for non-MDI icons.
+ */
+const MDI_CSS_URL = "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css";
+
 class HaIcon extends HTMLElement {
   static get observedAttributes() {
     return ["icon"];
   }
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
   connectedCallback() {
-    this.style.display = "inline-block";
-    this.style.width = "var(--mdc-icon-size, 18px)";
-    this.style.height = "var(--mdc-icon-size, 18px)";
+    this.style.display = "inline-flex";
+    this.style.alignItems = "center";
+    this.style.justifyContent = "center";
+    this.style.width = "var(--mdc-icon-size, 24px)";
+    this.style.height = "var(--mdc-icon-size, 24px)";
     this.style.verticalAlign = "middle";
     this._render();
   }
@@ -112,11 +132,27 @@ class HaIcon extends HTMLElement {
     return this.getAttribute("icon");
   }
   _render() {
-    // No real MDI here — show a tiny tag so you can see the icon name.
-    this.title = this.getAttribute("icon") || "";
-    this.textContent = "◆";
-    this.style.fontSize = "14px";
-    this.style.opacity = "0.7";
+    const icon = this.getAttribute("icon") || "";
+    this.title = icon;
+    if (icon.startsWith("mdi:")) {
+      const name = icon.slice(4);
+      this.shadowRoot.innerHTML = `
+        <link rel="stylesheet" href="${MDI_CSS_URL}">
+        <style>
+          :host { display: inline-flex; }
+          i {
+            font-size: var(--mdc-icon-size, 24px);
+            line-height: 1;
+            color: currentColor;
+          }
+        </style>
+        <i class="mdi mdi-${name}" aria-hidden="true"></i>
+      `;
+    } else if (icon) {
+      this.shadowRoot.innerHTML = `<span style="font-size: 11px; opacity: 0.7;">${icon}</span>`;
+    } else {
+      this.shadowRoot.innerHTML = "";
+    }
   }
 }
 customElements.define("ha-icon", HaIcon);
