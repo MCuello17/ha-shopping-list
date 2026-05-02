@@ -16,7 +16,8 @@
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {
-    "pre-commit": "npm run check"
+    "pre-commit": "npm run check",
+    "pre-push": "npm run build"
   },
   "keywords": [
     "home-assistant",
