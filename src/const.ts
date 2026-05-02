@@ -1,0 +1,15 @@
+export const CARD_VERSION = "0.1.0";
+
+export const CARD_TAG = "shopping-list-card";
+export const EDITOR_TAG = "shopping-list-card-editor";
+
+export const DEFAULT_CONFIG = {
+  type: `custom:${CARD_TAG}`,
+  title: "Shopping List",
+  show_header: true,
+  show_completed: false,
+  show_add_input: true,
+  add_button_label: "Add",
+  empty_message: "Nothing on the list",
+  sort: "manual" as const,
+};

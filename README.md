@@ -1,2 +1,33 @@
 # ha-shopping-list
-Just a Shopping List
+
+> ⚠️ **WORK IN PROGRESS — JUST A SHOPPING LIST**
+
+A custom Home Assistant card for the built-in
+[Shopping List](https://www.home-assistant.io/integrations/shopping_list/) integration.
+
+## Status
+
+Early scaffolding. Not ready for use yet.
+
+## Development
+
+```bash
+npm install
+npm run dev    # builds, watches, and serves the dev harness
+```
+
+Then open <http://localhost:5173/dev/> in your browser.
+
+Or run the pieces individually:
+
+```bash
+npm run watch  # rebuild on change → dist/ha-shopping-list-card.js
+npm run serve  # static dev server (project root) on :5173
+```
+
+The dev harness (`dev/index.html`) loads the built card with a mock `hass`
+object so you can iterate on the card without running Home Assistant.
+
+## License
+
+MIT

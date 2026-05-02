@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shopping List Card · Dev Harness</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --primary-color: #03a9f4;
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9e9e9e;
+        --disabled-text-color: #666;
+        --divider-color: #383838;
+        --card-background-color: #1f1f1f;
+        --ha-card-background: #1f1f1f;
+        --error-color: #ef5350;
+        --mdc-theme-secondary: #03a9f4;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #111;
+        color: var(--primary-text-color);
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        height: 100%;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 280px 1fr 380px;
+        gap: 16px;
+        padding: 16px;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+      .panel {
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+        padding: 14px;
+        overflow: auto;
+      }
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--secondary-text-color);
+      }
+      .stage {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px;
+        background: linear-gradient(180deg, #181818, #111);
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+      }
+      .stage > shopping-list-card {
+        width: 100%;
+        max-width: 420px;
+      }
+      button.preset {
+        display: block;
+        width: 100%;
+        margin: 4px 0;
+        padding: 8px 10px;
+        background: #2a2a2a;
+        color: #e1e1e1;
+        border: 1px solid #383838;
+        border-radius: 6px;
+        cursor: pointer;
+        text-align: left;
+      }
+      button.preset:hover {
+        background: #333;
+        border-color: #4a4a4a;
+      }
+      button.preset.active {
+        background: #03a9f433;
+        border-color: var(--primary-color);
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .row button {
+        flex: 1;
+        padding: 6px 10px;
+        background: #2a2a2a;
+        color: #e1e1e1;
+        border: 1px solid #383838;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .row button:hover {
+        background: #333;
+      }
+      pre.config {
+        background: #0d0d0d;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        padding: 10px;
+        font: 12px/1.4 ui-monospace, monospace;
+        color: #c0c0c0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 240px;
+        overflow: auto;
+      }
+      .editor-host {
+        background: #131313;
+        border: 1px dashed #333;
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 6px;
+      }
+      .footer-note {
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        line-height: 1.5;
+      }
+      .footer-note code {
+        background: #2a2a2a;
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <!-- Left: presets + actions ---------------------------------- -->
+      <aside class="panel">
+        <h2>Config presets</h2>
+        <div id="presets"></div>
+
+        <h2 style="margin-top: 18px">Mock data</h2>
+        <div class="row">
+          <button id="reset">Reset items</button>
+          <button id="clear">Clear all</button>
+        </div>
+        <div class="row">
+          <button id="seed">Seed 20 items</button>
+        </div>
+
+        <div class="footer-note">
+          This harness mocks <code>hass</code> in-memory. Reload to reset everything. The
+          <code>ha-*</code> stubs are minimal — use real HA for visual fidelity.
+        </div>
+      </aside>
+
+      <!-- Center: live card --------------------------------------- -->
+      <section class="panel stage" id="stage">
+        <!-- shopping-list-card injected here -->
+      </section>
+
+      <!-- Right: editor + config view ----------------------------- -->
+      <aside class="panel">
+        <h2>Visual editor (stubbed)</h2>
+        <div class="editor-host" id="editor-host"></div>
+
+        <h2 style="margin-top: 18px">Effective config (YAML-ish)</h2>
+        <pre class="config" id="config-view"></pre>
+      </aside>
+    </div>
+
+    <!-- HA element stubs MUST load before the card -->
+    <script type="module" src="./ha-stubs.js"></script>
+
+    <script type="module">
+      import { createMockHass } from "./mock-hass.js";
+      import "../dist/ha-shopping-list-card.js";
+
+      const PRESETS = {
+        Default: {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "Shopping List",
+          icon: "mdi:cart",
+          show_header: true,
+          show_completed: false,
+          show_add_input: true,
+          add_button_label: "Add",
+          empty_message: "Nothing on the list",
+          sort: "manual",
+        },
+        "No header": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          show_header: false,
+        },
+        "Show completed + alpha sort": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "All items",
+          icon: "mdi:cart",
+          show_completed: true,
+          sort: "alpha",
+        },
+        "Read-only (no add input)": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "Groceries",
+          show_add_input: false,
+        },
+        "Custom CSS": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "Themed",
+          icon: "mdi:basket",
+          style: `
+ha-card {
+  border: 2px solid var(--primary-color);
+  background: linear-gradient(160deg, #1f1f1f, #2a1f33);
+}
+.header { color: #ffb3ec; }
+          `.trim(),
+        },
+        "No entity selected": {
+          type: "custom:shopping-list-card",
+        },
+      };
+
+      const STARTER_ITEMS = [
+        { uid: "1", summary: "Bananas", status: "needs_action" },
+        { uid: "2", summary: "Olive oil", status: "needs_action" },
+        { uid: "3", summary: "Bread", status: "needs_action" },
+        { uid: "4", summary: "Coffee beans", status: "completed" },
+      ];
+
+      const stage = document.getElementById("stage");
+      const presetsEl = document.getElementById("presets");
+      const configView = document.getElementById("config-view");
+      const editorHost = document.getElementById("editor-host");
+
+      let mock = createMockHass({ initialItems: STARTER_ITEMS });
+      let card = null;
+      let editor = null;
+      let activeConfig = PRESETS.Default;
+      let activePresetName = "Default";
+
+      function yamlish(obj) {
+        // Tiny subset YAML-ish printer for display only.
+        return Object.entries(obj)
+          .map(([k, v]) => {
+            if (typeof v === "string" && v.includes("\n")) {
+              const indented = v
+                .split("\n")
+                .map((l) => "  " + l)
+                .join("\n");
+              return `${k}: |\n${indented}`;
+            }
+            return `${k}: ${JSON.stringify(v)}`;
+          })
+          .join("\n");
+      }
+
+      function mountCard(config) {
+        activeConfig = config;
+        configView.textContent = yamlish(config);
+
+        // (Re)create card so setConfig + initial subscription wire fresh.
+        if (card) card.remove();
+        card = document.createElement("shopping-list-card");
+        card.hass = mock.hass;
+        card.setConfig(config);
+        stage.appendChild(card);
+
+        // (Re)mount the editor too.
+        editorHost.innerHTML = "";
+        editor = document.createElement("shopping-list-card-editor");
+        editor.hass = mock.hass;
+        editor.setConfig(config);
+        editor.addEventListener("config-changed", (ev) => {
+          const next = ev.detail.config;
+          activeConfig = next;
+          configView.textContent = yamlish(next);
+          if (card) {
+            card.setConfig(next);
+            card.requestUpdate?.();
+          }
+        });
+        editorHost.appendChild(editor);
+      }
+
+      function renderPresetButtons() {
+        presetsEl.innerHTML = "";
+        for (const name of Object.keys(PRESETS)) {
+          const btn = document.createElement("button");
+          btn.className = "preset" + (name === activePresetName ? " active" : "");
+          btn.textContent = name;
+          btn.addEventListener("click", () => {
+            activePresetName = name;
+            renderPresetButtons();
+            mountCard(structuredClone(PRESETS[name]));
+          });
+          presetsEl.appendChild(btn);
+        }
+      }
+
+      document.getElementById("reset").addEventListener("click", () => {
+        mock = createMockHass({ initialItems: STARTER_ITEMS });
+        mountCard(structuredClone(activeConfig));
+      });
+      document.getElementById("clear").addEventListener("click", () => {
+        mock = createMockHass({ initialItems: [] });
+        mountCard(structuredClone(activeConfig));
+      });
+      document.getElementById("seed").addEventListener("click", () => {
+        const items = Array.from({ length: 20 }, (_, i) => ({
+          uid: String(100 + i),
+          summary: `Item ${i + 1}`,
+          status: i % 5 === 0 ? "completed" : "needs_action",
+        }));
+        mock = createMockHass({ initialItems: items });
+        mountCard(structuredClone(activeConfig));
+      });
+
+      renderPresetButtons();
+      mountCard(structuredClone(PRESETS.Default));
+    </script>
+  </body>
+</html>

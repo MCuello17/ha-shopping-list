@@ -1,0 +1,288 @@
+/**
+ * Minimal stand-ins for the Home Assistant web components used by the card.
+ *
+ * These do NOT look or behave exactly like the real HA elements — they exist
+ * so that the card can mount, render, and respond to user input outside HA.
+ * Use HA itself for visual fidelity / accessibility verification.
+ */
+
+class HaCard extends HTMLElement {
+  connectedCallback() {
+    this.style.display = "block";
+    this.style.background = "var(--ha-card-background, var(--card-background-color, #1f1f1f))";
+    this.style.color = "var(--primary-text-color, #e1e1e1)";
+    this.style.borderRadius = "12px";
+    this.style.padding = "0";
+    this.style.boxShadow = "0 2px 4px rgba(0,0,0,0.2)";
+  }
+}
+customElements.define("ha-card", HaCard);
+
+class HaCheckbox extends HTMLElement {
+  static get observedAttributes() {
+    return ["checked", "disabled"];
+  }
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host { display: inline-flex; align-items: center; cursor: pointer; }
+        input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--mdc-theme-secondary, #03a9f4); }
+      </style>
+      <input type="checkbox" />
+    `;
+    this._input = root.querySelector("input");
+    this._input.addEventListener("change", () => {
+      this._checked = this._input.checked;
+      this.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    });
+  }
+  set checked(v) {
+    this._checked = !!v;
+    if (this._input) this._input.checked = this._checked;
+  }
+  get checked() {
+    return this._input ? this._input.checked : !!this._checked;
+  }
+}
+customElements.define("ha-checkbox", HaCheckbox);
+
+class HaTextfield extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host { display: inline-flex; flex: 1; }
+        input {
+          flex: 1;
+          padding: 8px 12px;
+          border: 1px solid var(--divider-color, #444);
+          border-radius: 6px;
+          background: var(--card-background-color, #2a2a2a);
+          color: var(--primary-text-color, #e1e1e1);
+          font: inherit;
+        }
+        input:focus { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: -2px; }
+      </style>
+      <input type="text" />
+    `;
+    this._input = root.querySelector("input");
+    this._input.addEventListener("input", (ev) => {
+      this.value = this._input.value;
+      this.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    });
+    this._input.addEventListener("keydown", (ev) => {
+      this.dispatchEvent(new KeyboardEvent("keydown", { key: ev.key, bubbles: true, composed: true }));
+    });
+  }
+  set value(v) {
+    if (this._input && this._input.value !== v) this._input.value = v ?? "";
+  }
+  get value() {
+    return this._input ? this._input.value : "";
+  }
+  set placeholder(v) {
+    if (this._input) this._input.placeholder = v ?? "";
+  }
+}
+customElements.define("ha-textfield", HaTextfield);
+
+class HaIcon extends HTMLElement {
+  static get observedAttributes() {
+    return ["icon"];
+  }
+  connectedCallback() {
+    this.style.display = "inline-block";
+    this.style.width = "var(--mdc-icon-size, 18px)";
+    this.style.height = "var(--mdc-icon-size, 18px)";
+    this.style.verticalAlign = "middle";
+    this._render();
+  }
+  attributeChangedCallback() {
+    this._render();
+  }
+  set icon(v) {
+    this.setAttribute("icon", v);
+  }
+  get icon() {
+    return this.getAttribute("icon");
+  }
+  _render() {
+    // No real MDI here — show a tiny tag so you can see the icon name.
+    this.title = this.getAttribute("icon") || "";
+    this.textContent = "◆";
+    this.style.fontSize = "14px";
+    this.style.opacity = "0.7";
+  }
+}
+customElements.define("ha-icon", HaIcon);
+
+class HaIconButton extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: var(--mdc-icon-button-size, 36px);
+          height: var(--mdc-icon-button-size, 36px);
+          border-radius: 50%;
+          cursor: pointer;
+          background: transparent;
+          color: inherit;
+        }
+        :host(:hover) { background: rgba(255,255,255,0.08); }
+      </style>
+      <slot></slot>
+    `;
+  }
+}
+customElements.define("ha-icon-button", HaIconButton);
+
+class MwcButton extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px 14px;
+          border-radius: 6px;
+          background: var(--primary-color, #03a9f4);
+          color: white;
+          cursor: pointer;
+          font: inherit;
+          font-weight: 500;
+          user-select: none;
+        }
+        :host(:hover) { filter: brightness(1.1); }
+      </style>
+      <slot></slot>
+    `;
+  }
+}
+customElements.define("mwc-button", MwcButton);
+
+/* --- Editor-only stubs ------------------------------------------------- */
+
+/**
+ * Extremely simplified `ha-form` stub.
+ * Renders a basic <input> per schema item and dispatches `value-changed`
+ * with the merged data when any field changes.
+ */
+class HaForm extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  set hass(_v) {
+    /* unused */
+  }
+  set data(v) {
+    this._data = { ...(v || {}) };
+    this._render();
+  }
+  set schema(v) {
+    this._schema = v || [];
+    this._render();
+  }
+  set computeLabel(fn) {
+    this._computeLabel = fn;
+    this._render();
+  }
+  _render() {
+    if (!this._schema) return;
+    const rows = this._schema
+      .map((item) => {
+        const label = this._computeLabel ? this._computeLabel(item) : item.name;
+        const val = this._data?.[item.name] ?? "";
+        const sel = item.selector || {};
+        let input;
+        if (sel.boolean) {
+          input = `<input type="checkbox" data-name="${item.name}" ${val ? "checked" : ""} />`;
+        } else if (sel.select) {
+          const opts = (sel.select.options || [])
+            .map((o) => `<option value="${o.value}" ${o.value === val ? "selected" : ""}>${o.label}</option>`)
+            .join("");
+          input = `<select data-name="${item.name}">${opts}</select>`;
+        } else {
+          input = `<input type="text" data-name="${item.name}" value="${String(val).replace(/"/g, "&quot;")}" />`;
+        }
+        return `<label style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+          <span style="flex:0 0 180px;color:var(--secondary-text-color,#aaa);">${label}</span>
+          ${input}
+        </label>`;
+      })
+      .join("");
+    this.shadowRoot.innerHTML = `
+      <style>
+        input[type=text], select { padding: 4px 8px; flex: 1; background: #2a2a2a; color: #e1e1e1; border: 1px solid #444; border-radius: 4px; }
+      </style>
+      ${rows}
+    `;
+    this.shadowRoot.querySelectorAll("[data-name]").forEach((el) => {
+      el.addEventListener("change", () => this._fire());
+      el.addEventListener("input", () => this._fire());
+    });
+  }
+  _fire() {
+    const next = { ...this._data };
+    this.shadowRoot.querySelectorAll("[data-name]").forEach((el) => {
+      const name = el.getAttribute("data-name");
+      next[name] = el.type === "checkbox" ? el.checked : el.value;
+    });
+    this._data = next;
+    this.dispatchEvent(
+      new CustomEvent("value-changed", { detail: { value: next }, bubbles: true, composed: true }),
+    );
+  }
+}
+customElements.define("ha-form", HaForm);
+
+class HaCodeEditor extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host { display: block; }
+        textarea {
+          width: 100%; min-height: 120px;
+          background: #1a1a1a; color: #d0d0d0;
+          border: 1px solid #444; border-radius: 4px;
+          font: 13px/1.4 ui-monospace, monospace; padding: 8px;
+          resize: vertical;
+        }
+      </style>
+      <textarea></textarea>
+    `;
+    this._ta = root.querySelector("textarea");
+    this._ta.addEventListener("input", () => {
+      this.dispatchEvent(
+        new CustomEvent("value-changed", {
+          detail: { value: this._ta.value },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    });
+  }
+  set value(v) {
+    if (this._ta && this._ta.value !== v) this._ta.value = v ?? "";
+  }
+  get value() {
+    return this._ta?.value ?? "";
+  }
+  set mode(_m) {
+    /* ignored */
+  }
+}
+customElements.define("ha-code-editor", HaCodeEditor);
