@@ -11,6 +11,13 @@ export type SortMode = "manual" | "alpha" | "created";
  */
 export type CompletedDisplay = "bottom" | "inline" | "collapse" | "hide";
 
+/**
+ * Where the "add item" input row is rendered:
+ *   - "bottom": below the list (default)
+ *   - "top":    just under the header, above the list
+ */
+export type AddInputPosition = "bottom" | "top";
+
 export interface ShoppingListCardConfig extends LovelaceCardConfig {
   type: string;
   entity?: string;
@@ -27,6 +34,8 @@ export interface ShoppingListCardConfig extends LovelaceCardConfig {
   /** Label for the collapsed completed-items toggle in `completed: "collapse"` mode. */
   completed_label?: string;
   show_add_input?: boolean;
+  /** Where to render the "add item" input row. Defaults to "bottom". */
+  add_input_position?: AddInputPosition;
   add_button_label?: string;
   empty_message?: string;
   sort?: SortMode;

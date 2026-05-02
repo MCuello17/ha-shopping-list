@@ -215,12 +215,15 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
 
     const cfg = this._config;
     const customStyle = this._extractCustomStyle();
+    const showAdd = !!(cfg.show_add_input && cfg.entity);
+    const position = cfg.add_input_position ?? "bottom";
 
     return html`
       <ha-card class="sl-card">
         ${cfg.show_header ? this._renderHeader() : nothing}
         ${this._error ? html`<div class="sl-error">${this._error}</div>` : nothing}
-        ${this._renderBody()} ${cfg.show_add_input && cfg.entity ? this._renderAddRow() : nothing}
+        ${showAdd && position === "top" ? this._renderAddRow("top") : nothing} ${this._renderBody()}
+        ${showAdd && position !== "top" ? this._renderAddRow("bottom") : nothing}
       </ha-card>
       ${customStyle
         ? html`<style>
@@ -363,11 +366,11 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
     `;
   }
 
-  private _renderAddRow(): TemplateResult {
+  private _renderAddRow(position: "top" | "bottom"): TemplateResult {
     const cfg = this._config!;
     const canAdd = this._draft.trim().length > 0;
     return html`
-      <div class="sl-add-row">
+      <div class="sl-add-row sl-add-row--${position}">
         <input
           class="sl-input"
           type="text"

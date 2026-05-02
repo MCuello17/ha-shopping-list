@@ -42,7 +42,9 @@ import { css } from "lit";
  *   .sl-checkbox            — item checkbox
  *   .sl-summary             — item label text
  *   .sl-delete-button       — per-item delete button
- *   .sl-add-row             — bottom add-item row
+ *   .sl-add-row             — add-item row (with position modifier)
+ *     .sl-add-row--top      — modifier when rendered above the list
+ *     .sl-add-row--bottom   — modifier when rendered below the list
  *   .sl-input               — add-item text input
  *   .sl-add-button          — add-item submit button
  *   .sl-completed-toggle    — "Completed (N)" expandable header row
@@ -131,7 +133,11 @@ export const cardStyles = css`
 
     /* Layout */
     --shopping-list-add-row-gap: 8px;
-    --shopping-list-add-row-margin: 8px 0 0;
+    /* Breathing room between the add row and the list. Applied to the
+       side facing the list so it works for both top and bottom placement
+       (margin-top when the row sits at the bottom, margin-bottom when it
+       sits at the top). */
+    --shopping-list-add-row-spacing: 8px;
 
     display: block;
   }
@@ -272,7 +278,13 @@ export const cardStyles = css`
     display: flex;
     gap: var(--shopping-list-add-row-gap);
     align-items: center;
-    margin: var(--shopping-list-add-row-margin);
+  }
+  /* Position-aware spacing: push away from the list, not from the edge. */
+  .sl-add-row--bottom {
+    margin-top: var(--shopping-list-add-row-spacing);
+  }
+  .sl-add-row--top {
+    margin-bottom: var(--shopping-list-add-row-spacing);
   }
 
   .sl-input {

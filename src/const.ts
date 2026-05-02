@@ -10,6 +10,7 @@ export const DEFAULT_CONFIG = {
   completed: "bottom" as const,
   completed_label: "Completed",
   show_add_input: true,
+  add_input_position: "bottom" as const,
   add_button_label: "Add",
   empty_message: "Nothing on the list",
   sort: "manual" as const,

@@ -3,7 +3,12 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, LovelaceCardEditor } from "./ha-types.js";
 
 import { EDITOR_TAG } from "./const.js";
-import type { CompletedDisplay, ShoppingListCardConfig, SortMode } from "./types.js";
+import type {
+  AddInputPosition,
+  CompletedDisplay,
+  ShoppingListCardConfig,
+  SortMode,
+} from "./types.js";
 
 /**
  * Schema items match the shape `<ha-form>` understands. We support two
@@ -40,6 +45,11 @@ const COMPLETED_OPTIONS = [
   { value: "inline", label: "Mixed with active items" },
   { value: "collapse", label: "Collapsible section" },
   { value: "hide", label: "Hide completed items" },
+];
+
+const ADD_INPUT_POSITION_OPTIONS = [
+  { value: "bottom", label: "Bottom (below the list)" },
+  { value: "top", label: "Top (below the header)" },
 ];
 
 const SCHEMA: SchemaItem[] = [
@@ -94,6 +104,10 @@ const SCHEMA: SchemaItem[] = [
     flatten: true,
     schema: [
       { name: "show_add_input", selector: { boolean: {} } },
+      {
+        name: "add_input_position",
+        selector: { select: { mode: "dropdown", options: ADD_INPUT_POSITION_OPTIONS } },
+      },
       { name: "add_button_label", selector: { text: {} } },
     ],
   },
@@ -210,6 +224,7 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
       completed: "Show completed items",
       completed_label: "Completed group label",
       show_add_input: "Show add-item input",
+      add_input_position: "Add bar position",
       add_button_label: "Add button label",
       empty_message: "Empty list message",
       sort: "Sort order",
@@ -223,6 +238,7 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
     const data = ev.detail.value as Partial<ShoppingListCardConfig> & {
       sort?: SortMode;
       completed?: CompletedDisplay;
+      add_input_position?: AddInputPosition;
     };
     const newConfig: ShoppingListCardConfig = { ...this._config, ...data };
     // Drop the deprecated boolean once the user touches the editor so we
