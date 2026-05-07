@@ -41,6 +41,19 @@ export interface ShoppingListCardConfig extends LovelaceCardConfig {
   enable_edit?: boolean;
   /** Allow removing items via the trailing close button. Defaults to true. */
   enable_remove?: boolean;
+  /**
+   * Track per-item quantities. When enabled, edits expose a `−/N/+`
+   * stepper and items render as `name ×N` (badge shown only when N > 1).
+   * Quantity is persisted in the item's summary as `<quantity: N>`.
+   * Defaults to false.
+   */
+  enable_quantity?: boolean;
+  /**
+   * Maximum allowed quantity. `0` (the default) means unlimited.
+   * The stepper's `+` button is disabled when the current value reaches
+   * this limit; existing items above the limit are not auto-clamped.
+   */
+  quantity_max?: number;
   empty_message?: string;
   sort?: SortMode;
   /** Free-form CSS appended to the card's shadow root for power users / theming. */

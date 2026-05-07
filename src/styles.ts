@@ -48,6 +48,12 @@ import { css } from "lit";
  *   .sl-delete-button       — per-item delete button
  *   .sl-save-button         — confirm rename (edit mode)
  *   .sl-cancel-button       — abort rename (edit mode)
+ *   .sl-quantity-badge      — "×N" badge shown on items with quantity > 1
+ *   .sl-quantity-stepper    — −/N/+ wrapper shown in edit mode
+ *     .sl-quantity-stepper--add — modifier when used in the add row
+ *   .sl-quantity-step       — single − or + button in the stepper
+ *     .sl-quantity-step--minus / --plus
+ *   .sl-quantity-value      — the numeric label between the −/+ buttons
  *   .sl-add-row             — add-item row (with position modifier)
  *     .sl-add-row--top      — modifier when rendered above the list
  *     .sl-add-row--bottom   — modifier when rendered below the list
@@ -103,6 +109,25 @@ export const cardStyles = css`
     --shopping-list-actions-gap: 2px;
     --shopping-list-action-size: 32px;
     --shopping-list-action-icon-size: 18px;
+
+    /* Quantity badge (display) */
+    --shopping-list-quantity-badge-bg: rgba(var(--rgb-primary-color, 3, 169, 244), 0.14);
+    --shopping-list-quantity-badge-fg: var(--shopping-list-accent);
+    --shopping-list-quantity-badge-padding: 1px 8px;
+    --shopping-list-quantity-badge-radius: 999px;
+    --shopping-list-quantity-badge-font-size: 0.85em;
+    --shopping-list-quantity-badge-font-weight: 600;
+    --shopping-list-quantity-badge-margin: 0 0 0 6px;
+
+    /* Quantity stepper (edit mode) */
+    --shopping-list-quantity-stepper-gap: 2px;
+    --shopping-list-quantity-step-size: 28px;
+    --shopping-list-quantity-step-icon-size: 16px;
+    --shopping-list-quantity-step-bg: var(--shopping-list-pill-bg);
+    --shopping-list-quantity-step-bg-hover: var(--shopping-list-pill-bg-hover);
+    --shopping-list-quantity-step-fg: var(--shopping-list-fg);
+    --shopping-list-quantity-step-radius: 999px;
+    --shopping-list-quantity-value-min-width: 22px;
 
     /* Completed items */
     --shopping-list-completed-fg: var(--disabled-text-color, #bdbdbd);
@@ -290,6 +315,63 @@ export const cardStyles = css`
   }
   .sl-edit-input::selection {
     background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.35);
+  }
+
+  /* ─── Quantity (badge + stepper) ────────────────────────────── */
+  .sl-quantity-badge {
+    display: inline-block;
+    margin: var(--shopping-list-quantity-badge-margin);
+    padding: var(--shopping-list-quantity-badge-padding);
+    background: var(--shopping-list-quantity-badge-bg);
+    color: var(--shopping-list-quantity-badge-fg);
+    border-radius: var(--shopping-list-quantity-badge-radius);
+    font-size: var(--shopping-list-quantity-badge-font-size);
+    font-weight: var(--shopping-list-quantity-badge-font-weight);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  /* Inherit the muted/strikethrough treatment of completed items so the
+     badge fades along with the rest of the row. */
+  .sl-item--completed .sl-quantity-badge {
+    color: var(--shopping-list-completed-fg);
+    background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
+  }
+
+  .sl-quantity-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--shopping-list-quantity-stepper-gap);
+    flex-shrink: 0;
+  }
+  .sl-quantity-step {
+    width: var(--shopping-list-quantity-step-size);
+    height: var(--shopping-list-quantity-step-size);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--shopping-list-quantity-step-bg);
+    color: var(--shopping-list-quantity-step-fg);
+    border: none;
+    border-radius: var(--shopping-list-quantity-step-radius);
+    cursor: pointer;
+    line-height: 1;
+    transition: background 120ms ease;
+    --mdc-icon-size: var(--shopping-list-quantity-step-icon-size);
+  }
+  .sl-quantity-step:hover:not(:disabled) {
+    background: var(--shopping-list-quantity-step-bg-hover);
+  }
+  .sl-quantity-step:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .sl-quantity-value {
+    min-width: var(--shopping-list-quantity-value-min-width);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    color: var(--shopping-list-fg);
   }
 
   /* ─── Completed section toggle (collapse mode) ─────────────────── */

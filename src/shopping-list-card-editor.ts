@@ -85,6 +85,21 @@ const SCHEMA: SchemaItem[] = [
 
   {
     type: "expandable",
+    name: "_grp_quantity",
+    title: "Quantities",
+    icon: "mdi:counter",
+    flatten: true,
+    schema: [
+      { name: "enable_quantity", selector: { boolean: {} } },
+      {
+        name: "quantity_max",
+        selector: { number: { min: 0, max: 9999, step: 1, mode: "box" } },
+      },
+    ],
+  },
+
+  {
+    type: "expandable",
     name: "_grp_completed",
     title: "Completed items",
     icon: "mdi:check-circle-outline",
@@ -238,6 +253,8 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
       sort: "Sort order",
       enable_edit: "Allow editing items",
       enable_remove: "Allow removing items",
+      enable_quantity: "Enable quantities",
+      quantity_max: "Maximum quantity (0 = unlimited)",
     };
     return map[schema.name] ?? schema.name;
   };

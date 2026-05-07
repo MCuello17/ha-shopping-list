@@ -4,6 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, LovelaceCard, LovelaceCardEditor } from "./ha-types.js";
 
 import { CARD_TAG, CARD_VERSION, DEFAULT_CONFIG, EDITOR_TAG } from "./const.js";
+import { clampQuantity, formatQuantity, parseQuantity } from "./quantity.js";
 import type { ShoppingListCardConfig, TodoItem } from "./types.js";
 import { cardStyles } from "./styles.js";
 
@@ -53,6 +54,8 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   @state() private _completedExpanded = false;
   @state() private _editingUid?: string;
   @state() private _editDraft = "";
+  @state() private _editQuantity = 1;
+  @state() private _addQuantity = 1;
 
   private _unsub?: () => void;
   private _lastEntity?: string;
@@ -158,15 +161,31 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   }
 
   private async _addItem(): Promise<void> {
-    const entity = this._config?.entity;
-    const summary = this._draft.trim();
-    if (!entity || !summary || !this.hass) return;
+    const cfg = this._config;
+    const entity = cfg?.entity;
+    const trimmed = this._draft.trim();
+    if (!entity || !trimmed || !this.hass) return;
+
+    const enableQuantity = cfg.enable_quantity ?? false;
+    const quantity = clampQuantity(this._addQuantity, cfg.quantity_max ?? 0);
+    // formatQuantity drops the marker entirely when quantity == 1, so
+    // single-quantity adds still produce clean summaries.
+    const itemSummary = enableQuantity ? formatQuantity(trimmed, quantity) : trimmed;
+
     try {
-      await this.hass.callService("todo", "add_item", { entity_id: entity, item: summary });
+      await this.hass.callService("todo", "add_item", { entity_id: entity, item: itemSummary });
       this._draft = "";
+      // Per spec: quantities start at 1. Reset after every successful
+      // add so the next item begins fresh rather than carrying over.
+      this._addQuantity = 1;
     } catch (err) {
       this._error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  private _adjustAddQuantity(delta: number): void {
+    const max = this._config?.quantity_max ?? 0;
+    this._addQuantity = clampQuantity(this._addQuantity + delta, max);
   }
 
   private async _toggleItem(item: TodoItem): Promise<void> {
@@ -200,31 +219,62 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   /* ─── Inline edit ──────────────────────────────────────────────────── */
 
   private _startEdit(item: TodoItem): void {
+    const enableQuantity = this._config?.enable_quantity ?? false;
+    if (enableQuantity) {
+      // With quantity ON, split the marker out so the user edits only the
+      // name; the stepper handles quantity separately.
+      const { name, quantity } = parseQuantity(item.summary);
+      this._editDraft = name;
+      this._editQuantity = quantity;
+    } else {
+      // With quantity OFF, treat the summary as opaque text — markers (if
+      // any) are shown verbatim and the user can edit them by hand.
+      this._editDraft = item.summary;
+      this._editQuantity = 1;
+    }
     this._editingUid = item.uid;
-    this._editDraft = item.summary;
     this._focusEditOnUpdate = true;
   }
 
   private _cancelEdit(): void {
     this._editingUid = undefined;
     this._editDraft = "";
+    this._editQuantity = 1;
   }
 
   /**
-   * Commit a rename. Safe to call multiple times for the same item — once
-   * the rename completes (or the call is no-op'd) `_editingUid` is cleared
-   * so a stray late blur won't re-fire the service.
+   * Commit an edit (name and/or quantity). Safe to call multiple times
+   * for the same item — once it completes `_editingUid` is cleared so a
+   * stray late blur won't re-fire the service. The new summary is the
+   * trimmed name plus an encoded `<quantity: N>` marker when the feature
+   * is enabled and N > 1; otherwise it's just the trimmed name.
    */
-  private async _renameItem(item: TodoItem, newName: string): Promise<void> {
+  private async _saveEdit(item: TodoItem): Promise<void> {
     if (this._editingUid !== item.uid) return;
 
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === item.summary) {
+    const cfg = this._config;
+    if (!cfg) {
       this._cancelEdit();
       return;
     }
 
-    const entity = this._config?.entity;
+    const trimmedName = this._editDraft.trim();
+    if (!trimmedName) {
+      this._cancelEdit();
+      return;
+    }
+
+    const enableQuantity = cfg.enable_quantity ?? false;
+    const newSummary = enableQuantity
+      ? formatQuantity(trimmedName, clampQuantity(this._editQuantity, cfg.quantity_max ?? 0))
+      : trimmedName;
+
+    if (newSummary === item.summary) {
+      this._cancelEdit();
+      return;
+    }
+
+    const entity = cfg.entity;
     if (!entity || !this.hass) {
       this._cancelEdit();
       return;
@@ -238,11 +288,16 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
       await this.hass.callService("todo", "update_item", {
         entity_id: entity,
         item: item.uid,
-        rename: trimmed,
+        rename: newSummary,
       });
     } catch (err) {
       this._error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  private _adjustEditQuantity(delta: number): void {
+    const max = this._config?.quantity_max ?? 0;
+    this._editQuantity = clampQuantity(this._editQuantity + delta, max);
   }
 
   /* ─── Sorting / filtering ──────────────────────────────────────────── */
@@ -403,10 +458,22 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
     const isEditing = this._editingUid === item.uid;
     const enableEdit = cfg.enable_edit !== false;
     const enableRemove = cfg.enable_remove !== false;
+    const enableQuantity = cfg.enable_quantity ?? false;
+    const quantityMax = cfg.quantity_max ?? 0;
 
-    // Used on save/cancel buttons to suppress the implicit focus shift —
-    // otherwise mousedown moves focus off the input which fires `blur`,
-    // which would race the explicit click handler.
+    // When the feature is on, split the marker out for display. When off,
+    // pass the summary through verbatim — markers (if any) become text.
+    const parsed = enableQuantity
+      ? parseQuantity(item.summary)
+      : { name: item.summary, quantity: 1 };
+    const showQuantityBadge = enableQuantity && parsed.quantity > 1;
+
+    const canDecrement = this._editQuantity > 1;
+    const canIncrement = quantityMax <= 0 || this._editQuantity < quantityMax;
+
+    // Used on stepper/save/cancel buttons to suppress the implicit focus
+    // shift — otherwise mousedown moves focus off the input which fires
+    // `blur`, racing the explicit click handler.
     const suppressBlur = (ev: MouseEvent) => ev.preventDefault();
 
     return html`
@@ -441,7 +508,7 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
               @keydown=${(ev: KeyboardEvent) => {
                 if (ev.key === "Enter") {
                   ev.preventDefault();
-                  void this._renameItem(item, this._editDraft);
+                  void this._saveEdit(item);
                 } else if (ev.key === "Escape") {
                   ev.preventDefault();
                   this._cancelEdit();
@@ -449,14 +516,51 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
               }}
               @blur=${() => {
                 // Commit on blur (e.g. user clicks elsewhere on the page).
-                // Save/cancel buttons preventDefault on mousedown so they
-                // don't trigger this path.
+                // Stepper/save/cancel buttons preventDefault on mousedown
+                // so they don't trigger this path.
                 if (this._editingUid === item.uid) {
-                  void this._renameItem(item, this._editDraft);
+                  void this._saveEdit(item);
                 }
               }}
             />`
-          : html`<span class="sl-summary">${item.summary}</span>`}
+          : html`<span class="sl-summary"
+              >${parsed.name}${showQuantityBadge
+                ? html`<span class="sl-quantity-badge">×${parsed.quantity}</span>`
+                : nothing}</span
+            >`}
+        ${isEditing && enableQuantity
+          ? html`
+              <div class="sl-quantity-stepper" aria-label="Item quantity">
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--minus"
+                  ?disabled=${!canDecrement}
+                  aria-label="Decrease quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${(ev: MouseEvent) => {
+                    ev.stopPropagation();
+                    this._adjustEditQuantity(-1);
+                  }}
+                >
+                  <ha-icon icon="mdi:minus"></ha-icon>
+                </button>
+                <span class="sl-quantity-value" aria-live="polite">${this._editQuantity}</span>
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--plus"
+                  ?disabled=${!canIncrement}
+                  aria-label="Increase quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${(ev: MouseEvent) => {
+                    ev.stopPropagation();
+                    this._adjustEditQuantity(1);
+                  }}
+                >
+                  <ha-icon icon="mdi:plus"></ha-icon>
+                </button>
+              </div>
+            `
+          : nothing}
 
         <div class="sl-actions">
           ${isEditing
@@ -467,7 +571,7 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
                   @mousedown=${suppressBlur}
                   @click=${(ev: MouseEvent) => {
                     ev.stopPropagation();
-                    void this._renameItem(item, this._editDraft);
+                    void this._saveEdit(item);
                   }}
                 >
                   <ha-icon icon="mdi:check"></ha-icon>
@@ -518,6 +622,16 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   private _renderAddRow(position: "top" | "bottom"): TemplateResult {
     const cfg = this._config!;
     const canAdd = this._draft.trim().length > 0;
+    const enableQuantity = cfg.enable_quantity ?? false;
+    const quantityMax = cfg.quantity_max ?? 0;
+    const canAddDecrement = this._addQuantity > 1;
+    const canAddIncrement = quantityMax <= 0 || this._addQuantity < quantityMax;
+
+    // Keep the input focused when the user adjusts quantity so they can
+    // immediately press Enter to add. Without this, mousedown on the
+    // stepper button would steal focus from the input.
+    const suppressBlur = (ev: MouseEvent) => ev.preventDefault();
+
     return html`
       <div class="sl-add-row sl-add-row--${position}">
         <input
@@ -535,6 +649,36 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
             }
           }}
         />
+        ${enableQuantity
+          ? html`
+              <div
+                class="sl-quantity-stepper sl-quantity-stepper--add"
+                aria-label="Initial quantity for new item"
+              >
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--minus"
+                  ?disabled=${!canAddDecrement}
+                  aria-label="Decrease quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${() => this._adjustAddQuantity(-1)}
+                >
+                  <ha-icon icon="mdi:minus"></ha-icon>
+                </button>
+                <span class="sl-quantity-value" aria-live="polite">${this._addQuantity}</span>
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--plus"
+                  ?disabled=${!canAddIncrement}
+                  aria-label="Increase quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${() => this._adjustAddQuantity(1)}
+                >
+                  <ha-icon icon="mdi:plus"></ha-icon>
+                </button>
+              </div>
+            `
+          : nothing}
         <button
           class="sl-add-button"
           type="button"

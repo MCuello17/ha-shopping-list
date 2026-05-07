@@ -14,6 +14,8 @@ export const DEFAULT_CONFIG = {
   add_button_label: "Add",
   enable_edit: true,
   enable_remove: true,
+  enable_quantity: false,
+  quantity_max: 0,
   empty_message: "Nothing on the list",
   sort: "manual" as const,
 };

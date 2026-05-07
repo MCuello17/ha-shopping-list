@@ -310,6 +310,7 @@
         </div>
         <div class="row">
           <button id="seed">Seed 20 items</button>
+          <button id="seed-quantities">Seed quantities</button>
         </div>
 
         <div class="footer-note">
@@ -408,6 +409,22 @@
           icon: "mdi:cart",
           enable_edit: false,
           enable_remove: false,
+        },
+        "Quantities enabled": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "Groceries",
+          icon: "mdi:cart",
+          enable_quantity: true,
+          quantity_max: 99,
+        },
+        "Quantities (max 5)": {
+          type: "custom:shopping-list-card",
+          entity: "todo.shopping_list",
+          title: "Limited",
+          icon: "mdi:cart",
+          enable_quantity: true,
+          quantity_max: 5,
         },
         "Custom CSS (theme-aware)": {
           type: "custom:shopping-list-card",
@@ -592,6 +609,21 @@
           summary: `Item ${i + 1}`,
           status: i % 5 === 0 ? "completed" : "needs_action",
         }));
+        mock = createMockHass({ initialItems: items });
+        mountCard(structuredClone(activeConfig));
+      });
+      // Loads items pre-tagged with `<quantity: N>` markers so the
+      // quantity preset / feature can be demoed end-to-end without
+      // editing each item to add a quantity.
+      document.getElementById("seed-quantities").addEventListener("click", () => {
+        const items = [
+          { uid: "q1", summary: "Bananas <quantity: 6>", status: "needs_action" },
+          { uid: "q2", summary: "Olive oil", status: "needs_action" },
+          { uid: "q3", summary: "Bread <quantity: 2>", status: "needs_action" },
+          { uid: "q4", summary: "Apples <quantity: 12>", status: "needs_action" },
+          { uid: "q5", summary: "Coffee beans <quantity: 1>", status: "completed" },
+          { uid: "q6", summary: "Sparkling water <quantity: 4>", status: "completed" },
+        ];
         mock = createMockHass({ initialItems: items });
         mountCard(structuredClone(activeConfig));
       });

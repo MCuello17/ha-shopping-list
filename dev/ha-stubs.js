@@ -270,6 +270,17 @@ class HaForm extends HTMLElement {
         )
         .join("");
       input = `<select data-name="${item.name}">${opts}</select>`;
+    } else if (sel.number) {
+      // `data-coerce="number"` tells _fire() to convert the .value string
+      // back to a Number so the saved config matches what real HA emits.
+      const attrs = [
+        sel.number.min !== undefined ? `min="${sel.number.min}"` : "",
+        sel.number.max !== undefined ? `max="${sel.number.max}"` : "",
+        sel.number.step !== undefined ? `step="${sel.number.step}"` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      input = `<input type="number" data-name="${item.name}" data-coerce="number" value="${val}" ${attrs} />`;
     } else {
       input = `<input type="text" data-name="${item.name}" value="${String(val).replace(/"/g, "&quot;")}" />`;
     }
@@ -329,7 +340,12 @@ class HaForm extends HTMLElement {
     const next = { ...this._data };
     this.shadowRoot.querySelectorAll("[data-name]").forEach((el) => {
       const name = el.getAttribute("data-name");
-      next[name] = el.type === "checkbox" ? el.checked : el.value;
+      let value = el.type === "checkbox" ? el.checked : el.value;
+      if (el.getAttribute("data-coerce") === "number") {
+        const n = Number(value);
+        value = Number.isFinite(n) ? n : 0;
+      }
+      next[name] = value;
     });
     this._data = next;
     this.dispatchEvent(

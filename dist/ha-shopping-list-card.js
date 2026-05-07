@@ -106,9 +106,58 @@ const DEFAULT_CONFIG = {
     add_button_label: "Add",
     enable_edit: true,
     enable_remove: true,
+    enable_quantity: false,
+    quantity_max: 0,
     empty_message: "Nothing on the list",
     sort: "manual",
 };
+
+/**
+ * Quantity is encoded into the item summary as a `<quantity: N>` marker.
+ * Encoding it in plain text keeps the data portable:
+ *
+ *   - Survives a roundtrip through HA's todo API untouched.
+ *   - Power users can edit YAML or use HA's UI directly without losing it.
+ *   - When the quantity feature is disabled, the marker is just visible
+ *     text — no data migration needed to toggle the feature on/off.
+ *
+ * On parse we are deliberately tolerant:
+ *   - The marker can appear anywhere in the summary (we still strip it).
+ *   - Multiple markers are accepted; the last numeric value wins.
+ *   - Whitespace around the colon and inside the brackets is allowed.
+ *
+ * On format we are strict and canonical: always written at the end of the
+ * summary as `<name> <quantity: N>`. When N == 1 we omit the marker so
+ * single-quantity items stay clean in the underlying todo list.
+ */
+const MARKER_RE = /<quantity:\s*(\d+)\s*>/gi;
+function parseQuantity(summary) {
+    let last = null;
+    for (const m of summary.matchAll(MARKER_RE)) {
+        const n = Number.parseInt(m[1], 10);
+        if (Number.isFinite(n) && n > 0)
+            last = n;
+    }
+    const name = summary.replace(MARKER_RE, "").replace(/\s+/g, " ").trim();
+    return { name, quantity: last ?? 1 };
+}
+function formatQuantity(name, quantity) {
+    const trimmed = name.trim();
+    if (quantity <= 1)
+        return trimmed;
+    return `${trimmed} <quantity: ${quantity}>`;
+}
+/**
+ * Snap a quantity into the [1, max] range. `max <= 0` means unlimited.
+ * Non-finite or fractional inputs are floored and clamped at 1.
+ */
+function clampQuantity(quantity, max) {
+    const floored = Math.floor(Number(quantity) || 1);
+    const min1 = Math.max(1, floored);
+    if (max && max > 0)
+        return Math.min(min1, max);
+    return min1;
+}
 
 /**
  * ════════════════════════════════════════════════════════════════════════
@@ -158,6 +207,12 @@ const DEFAULT_CONFIG = {
  *   .sl-delete-button       — per-item delete button
  *   .sl-save-button         — confirm rename (edit mode)
  *   .sl-cancel-button       — abort rename (edit mode)
+ *   .sl-quantity-badge      — "×N" badge shown on items with quantity > 1
+ *   .sl-quantity-stepper    — −/N/+ wrapper shown in edit mode
+ *     .sl-quantity-stepper--add — modifier when used in the add row
+ *   .sl-quantity-step       — single − or + button in the stepper
+ *     .sl-quantity-step--minus / --plus
+ *   .sl-quantity-value      — the numeric label between the −/+ buttons
  *   .sl-add-row             — add-item row (with position modifier)
  *     .sl-add-row--top      — modifier when rendered above the list
  *     .sl-add-row--bottom   — modifier when rendered below the list
@@ -213,6 +268,25 @@ const cardStyles = i$5 `
     --shopping-list-actions-gap: 2px;
     --shopping-list-action-size: 32px;
     --shopping-list-action-icon-size: 18px;
+
+    /* Quantity badge (display) */
+    --shopping-list-quantity-badge-bg: rgba(var(--rgb-primary-color, 3, 169, 244), 0.14);
+    --shopping-list-quantity-badge-fg: var(--shopping-list-accent);
+    --shopping-list-quantity-badge-padding: 1px 8px;
+    --shopping-list-quantity-badge-radius: 999px;
+    --shopping-list-quantity-badge-font-size: 0.85em;
+    --shopping-list-quantity-badge-font-weight: 600;
+    --shopping-list-quantity-badge-margin: 0 0 0 6px;
+
+    /* Quantity stepper (edit mode) */
+    --shopping-list-quantity-stepper-gap: 2px;
+    --shopping-list-quantity-step-size: 28px;
+    --shopping-list-quantity-step-icon-size: 16px;
+    --shopping-list-quantity-step-bg: var(--shopping-list-pill-bg);
+    --shopping-list-quantity-step-bg-hover: var(--shopping-list-pill-bg-hover);
+    --shopping-list-quantity-step-fg: var(--shopping-list-fg);
+    --shopping-list-quantity-step-radius: 999px;
+    --shopping-list-quantity-value-min-width: 22px;
 
     /* Completed items */
     --shopping-list-completed-fg: var(--disabled-text-color, #bdbdbd);
@@ -402,6 +476,63 @@ const cardStyles = i$5 `
     background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.35);
   }
 
+  /* ─── Quantity (badge + stepper) ────────────────────────────── */
+  .sl-quantity-badge {
+    display: inline-block;
+    margin: var(--shopping-list-quantity-badge-margin);
+    padding: var(--shopping-list-quantity-badge-padding);
+    background: var(--shopping-list-quantity-badge-bg);
+    color: var(--shopping-list-quantity-badge-fg);
+    border-radius: var(--shopping-list-quantity-badge-radius);
+    font-size: var(--shopping-list-quantity-badge-font-size);
+    font-weight: var(--shopping-list-quantity-badge-font-weight);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  /* Inherit the muted/strikethrough treatment of completed items so the
+     badge fades along with the rest of the row. */
+  .sl-item--completed .sl-quantity-badge {
+    color: var(--shopping-list-completed-fg);
+    background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
+  }
+
+  .sl-quantity-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--shopping-list-quantity-stepper-gap);
+    flex-shrink: 0;
+  }
+  .sl-quantity-step {
+    width: var(--shopping-list-quantity-step-size);
+    height: var(--shopping-list-quantity-step-size);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--shopping-list-quantity-step-bg);
+    color: var(--shopping-list-quantity-step-fg);
+    border: none;
+    border-radius: var(--shopping-list-quantity-step-radius);
+    cursor: pointer;
+    line-height: 1;
+    transition: background 120ms ease;
+    --mdc-icon-size: var(--shopping-list-quantity-step-icon-size);
+  }
+  .sl-quantity-step:hover:not(:disabled) {
+    background: var(--shopping-list-quantity-step-bg-hover);
+  }
+  .sl-quantity-step:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .sl-quantity-value {
+    min-width: var(--shopping-list-quantity-value-min-width);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    color: var(--shopping-list-fg);
+  }
+
   /* ─── Completed section toggle (collapse mode) ─────────────────── */
   .sl-completed-toggle {
     list-style: none;
@@ -542,6 +673,20 @@ const SCHEMA = [
     },
     {
         type: "expandable",
+        name: "_grp_quantity",
+        title: "Quantities",
+        icon: "mdi:counter",
+        flatten: true,
+        schema: [
+            { name: "enable_quantity", selector: { boolean: {} } },
+            {
+                name: "quantity_max",
+                selector: { number: { min: 0, max: 9999, step: 1, mode: "box" } },
+            },
+        ],
+    },
+    {
+        type: "expandable",
         name: "_grp_completed",
         title: "Completed items",
         icon: "mdi:check-circle-outline",
@@ -591,6 +736,8 @@ let ShoppingListCardEditor = class ShoppingListCardEditor extends i$2 {
                 sort: "Sort order",
                 enable_edit: "Allow editing items",
                 enable_remove: "Allow removing items",
+                enable_quantity: "Enable quantities",
+                quantity_max: "Maximum quantity (0 = unlimited)",
             };
             return map[schema.name] ?? schema.name;
         };
@@ -767,6 +914,8 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
         this._draft = "";
         this._completedExpanded = false;
         this._editDraft = "";
+        this._editQuantity = 1;
+        this._addQuantity = 1;
         /** Set true on edit start; consumed by `updated()` to focus the input once. */
         this._focusEditOnUpdate = false;
         this._toggleCompletedExpanded = () => {
@@ -857,17 +1006,30 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
         }
     }
     async _addItem() {
-        const entity = this._config?.entity;
-        const summary = this._draft.trim();
-        if (!entity || !summary || !this.hass)
+        const cfg = this._config;
+        const entity = cfg?.entity;
+        const trimmed = this._draft.trim();
+        if (!entity || !trimmed || !this.hass)
             return;
+        const enableQuantity = cfg.enable_quantity ?? false;
+        const quantity = clampQuantity(this._addQuantity, cfg.quantity_max ?? 0);
+        // formatQuantity drops the marker entirely when quantity == 1, so
+        // single-quantity adds still produce clean summaries.
+        const itemSummary = enableQuantity ? formatQuantity(trimmed, quantity) : trimmed;
         try {
-            await this.hass.callService("todo", "add_item", { entity_id: entity, item: summary });
+            await this.hass.callService("todo", "add_item", { entity_id: entity, item: itemSummary });
             this._draft = "";
+            // Per spec: quantities start at 1. Reset after every successful
+            // add so the next item begins fresh rather than carrying over.
+            this._addQuantity = 1;
         }
         catch (err) {
             this._error = err instanceof Error ? err.message : String(err);
         }
+    }
+    _adjustAddQuantity(delta) {
+        const max = this._config?.quantity_max ?? 0;
+        this._addQuantity = clampQuantity(this._addQuantity + delta, max);
     }
     async _toggleItem(item) {
         const entity = this._config?.entity;
@@ -901,28 +1063,57 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
     }
     /* ─── Inline edit ──────────────────────────────────────────────────── */
     _startEdit(item) {
+        const enableQuantity = this._config?.enable_quantity ?? false;
+        if (enableQuantity) {
+            // With quantity ON, split the marker out so the user edits only the
+            // name; the stepper handles quantity separately.
+            const { name, quantity } = parseQuantity(item.summary);
+            this._editDraft = name;
+            this._editQuantity = quantity;
+        }
+        else {
+            // With quantity OFF, treat the summary as opaque text — markers (if
+            // any) are shown verbatim and the user can edit them by hand.
+            this._editDraft = item.summary;
+            this._editQuantity = 1;
+        }
         this._editingUid = item.uid;
-        this._editDraft = item.summary;
         this._focusEditOnUpdate = true;
     }
     _cancelEdit() {
         this._editingUid = undefined;
         this._editDraft = "";
+        this._editQuantity = 1;
     }
     /**
-     * Commit a rename. Safe to call multiple times for the same item — once
-     * the rename completes (or the call is no-op'd) `_editingUid` is cleared
-     * so a stray late blur won't re-fire the service.
+     * Commit an edit (name and/or quantity). Safe to call multiple times
+     * for the same item — once it completes `_editingUid` is cleared so a
+     * stray late blur won't re-fire the service. The new summary is the
+     * trimmed name plus an encoded `<quantity: N>` marker when the feature
+     * is enabled and N > 1; otherwise it's just the trimmed name.
      */
-    async _renameItem(item, newName) {
+    async _saveEdit(item) {
         if (this._editingUid !== item.uid)
             return;
-        const trimmed = newName.trim();
-        if (!trimmed || trimmed === item.summary) {
+        const cfg = this._config;
+        if (!cfg) {
             this._cancelEdit();
             return;
         }
-        const entity = this._config?.entity;
+        const trimmedName = this._editDraft.trim();
+        if (!trimmedName) {
+            this._cancelEdit();
+            return;
+        }
+        const enableQuantity = cfg.enable_quantity ?? false;
+        const newSummary = enableQuantity
+            ? formatQuantity(trimmedName, clampQuantity(this._editQuantity, cfg.quantity_max ?? 0))
+            : trimmedName;
+        if (newSummary === item.summary) {
+            this._cancelEdit();
+            return;
+        }
+        const entity = cfg.entity;
         if (!entity || !this.hass) {
             this._cancelEdit();
             return;
@@ -934,12 +1125,16 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
             await this.hass.callService("todo", "update_item", {
                 entity_id: entity,
                 item: item.uid,
-                rename: trimmed,
+                rename: newSummary,
             });
         }
         catch (err) {
             this._error = err instanceof Error ? err.message : String(err);
         }
+    }
+    _adjustEditQuantity(delta) {
+        const max = this._config?.quantity_max ?? 0;
+        this._editQuantity = clampQuantity(this._editQuantity + delta, max);
     }
     /* ─── Sorting / filtering ──────────────────────────────────────────── */
     _sort(items) {
@@ -1077,9 +1272,19 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
         const isEditing = this._editingUid === item.uid;
         const enableEdit = cfg.enable_edit !== false;
         const enableRemove = cfg.enable_remove !== false;
-        // Used on save/cancel buttons to suppress the implicit focus shift —
-        // otherwise mousedown moves focus off the input which fires `blur`,
-        // which would race the explicit click handler.
+        const enableQuantity = cfg.enable_quantity ?? false;
+        const quantityMax = cfg.quantity_max ?? 0;
+        // When the feature is on, split the marker out for display. When off,
+        // pass the summary through verbatim — markers (if any) become text.
+        const parsed = enableQuantity
+            ? parseQuantity(item.summary)
+            : { name: item.summary, quantity: 1 };
+        const showQuantityBadge = enableQuantity && parsed.quantity > 1;
+        const canDecrement = this._editQuantity > 1;
+        const canIncrement = quantityMax <= 0 || this._editQuantity < quantityMax;
+        // Used on stepper/save/cancel buttons to suppress the implicit focus
+        // shift — otherwise mousedown moves focus off the input which fires
+        // `blur`, racing the explicit click handler.
         const suppressBlur = (ev) => ev.preventDefault();
         return b `
       <li
@@ -1115,7 +1320,7 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
               @keydown=${(ev) => {
                 if (ev.key === "Enter") {
                     ev.preventDefault();
-                    void this._renameItem(item, this._editDraft);
+                    void this._saveEdit(item);
                 }
                 else if (ev.key === "Escape") {
                     ev.preventDefault();
@@ -1124,14 +1329,51 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
             }}
               @blur=${() => {
                 // Commit on blur (e.g. user clicks elsewhere on the page).
-                // Save/cancel buttons preventDefault on mousedown so they
-                // don't trigger this path.
+                // Stepper/save/cancel buttons preventDefault on mousedown
+                // so they don't trigger this path.
                 if (this._editingUid === item.uid) {
-                    void this._renameItem(item, this._editDraft);
+                    void this._saveEdit(item);
                 }
             }}
             />`
-            : b `<span class="sl-summary">${item.summary}</span>`}
+            : b `<span class="sl-summary"
+              >${parsed.name}${showQuantityBadge
+                ? b `<span class="sl-quantity-badge">×${parsed.quantity}</span>`
+                : A}</span
+            >`}
+        ${isEditing && enableQuantity
+            ? b `
+              <div class="sl-quantity-stepper" aria-label="Item quantity">
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--minus"
+                  ?disabled=${!canDecrement}
+                  aria-label="Decrease quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${(ev) => {
+                ev.stopPropagation();
+                this._adjustEditQuantity(-1);
+            }}
+                >
+                  <ha-icon icon="mdi:minus"></ha-icon>
+                </button>
+                <span class="sl-quantity-value" aria-live="polite">${this._editQuantity}</span>
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--plus"
+                  ?disabled=${!canIncrement}
+                  aria-label="Increase quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${(ev) => {
+                ev.stopPropagation();
+                this._adjustEditQuantity(1);
+            }}
+                >
+                  <ha-icon icon="mdi:plus"></ha-icon>
+                </button>
+              </div>
+            `
+            : A}
 
         <div class="sl-actions">
           ${isEditing
@@ -1142,7 +1384,7 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
                   @mousedown=${suppressBlur}
                   @click=${(ev) => {
                 ev.stopPropagation();
-                void this._renameItem(item, this._editDraft);
+                void this._saveEdit(item);
             }}
                 >
                   <ha-icon icon="mdi:check"></ha-icon>
@@ -1192,6 +1434,14 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
     _renderAddRow(position) {
         const cfg = this._config;
         const canAdd = this._draft.trim().length > 0;
+        const enableQuantity = cfg.enable_quantity ?? false;
+        const quantityMax = cfg.quantity_max ?? 0;
+        const canAddDecrement = this._addQuantity > 1;
+        const canAddIncrement = quantityMax <= 0 || this._addQuantity < quantityMax;
+        // Keep the input focused when the user adjusts quantity so they can
+        // immediately press Enter to add. Without this, mousedown on the
+        // stepper button would steal focus from the input.
+        const suppressBlur = (ev) => ev.preventDefault();
         return b `
       <div class="sl-add-row sl-add-row--${position}">
         <input
@@ -1209,6 +1459,36 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
             }
         }}
         />
+        ${enableQuantity
+            ? b `
+              <div
+                class="sl-quantity-stepper sl-quantity-stepper--add"
+                aria-label="Initial quantity for new item"
+              >
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--minus"
+                  ?disabled=${!canAddDecrement}
+                  aria-label="Decrease quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${() => this._adjustAddQuantity(-1)}
+                >
+                  <ha-icon icon="mdi:minus"></ha-icon>
+                </button>
+                <span class="sl-quantity-value" aria-live="polite">${this._addQuantity}</span>
+                <button
+                  type="button"
+                  class="sl-quantity-step sl-quantity-step--plus"
+                  ?disabled=${!canAddIncrement}
+                  aria-label="Increase quantity"
+                  @mousedown=${suppressBlur}
+                  @click=${() => this._adjustAddQuantity(1)}
+                >
+                  <ha-icon icon="mdi:plus"></ha-icon>
+                </button>
+              </div>
+            `
+            : A}
         <button
           class="sl-add-button"
           type="button"
@@ -1272,6 +1552,12 @@ __decorate([
 __decorate([
     r()
 ], ShoppingListCard.prototype, "_editDraft", void 0);
+__decorate([
+    r()
+], ShoppingListCard.prototype, "_editQuantity", void 0);
+__decorate([
+    r()
+], ShoppingListCard.prototype, "_addQuantity", void 0);
 ShoppingListCard = __decorate([
     t$2(CARD_TAG)
 ], ShoppingListCard);
