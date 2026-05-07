@@ -39,9 +39,15 @@ import { css } from "lit";
  *   .sl-list                — <ul> wrapping items
  *   .sl-item                — single item row
  *   .sl-item--completed     — modifier on completed items
+ *   .sl-item--editing       — modifier on item being inline-edited
  *   .sl-checkbox            — item checkbox
- *   .sl-summary             — item label text
+ *   .sl-summary             — item label text (read-only mode)
+ *   .sl-edit-input          — inline rename input (edit mode)
+ *   .sl-actions             — wrapper for per-item action buttons
+ *   .sl-edit-button         — pencil button to enter edit mode
  *   .sl-delete-button       — per-item delete button
+ *   .sl-save-button         — confirm rename (edit mode)
+ *   .sl-cancel-button       — abort rename (edit mode)
  *   .sl-add-row             — add-item row (with position modifier)
  *     .sl-add-row--top      — modifier when rendered above the list
  *     .sl-add-row--bottom   — modifier when rendered below the list
@@ -92,6 +98,11 @@ export const cardStyles = css`
     --shopping-list-item-padding: 8px 12px;
     --shopping-list-item-gap: 12px;
     --shopping-list-list-gap: 4px;
+
+    /* Per-item actions (edit / delete / save / cancel) */
+    --shopping-list-actions-gap: 2px;
+    --shopping-list-action-size: 32px;
+    --shopping-list-action-icon-size: 18px;
 
     /* Completed items */
     --shopping-list-completed-fg: var(--disabled-text-color, #bdbdbd);
@@ -230,16 +241,55 @@ export const cardStyles = css`
     word-break: break-word;
   }
 
-  .sl-delete-button {
-    --mdc-icon-button-size: 32px;
-    --mdc-icon-size: 18px;
-    color: var(--shopping-list-muted);
+  /* ─── Per-item action buttons (edit / delete / save / cancel) ─── */
+  .sl-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--shopping-list-actions-gap);
+    flex-shrink: 0;
+    /* Hidden by default; revealed on hover or focus on devices that
+       support hover. The @media (hover: none) block below makes them
+       always visible on touch devices (phones, tablets, HA's mobile
+       dashboards) where hover is not a viable affordance. */
     opacity: 0;
     transition: opacity 120ms ease;
   }
-  .sl-item:hover .sl-delete-button,
-  .sl-item:focus-within .sl-delete-button {
+  .sl-item:hover .sl-actions,
+  .sl-item:focus-within .sl-actions,
+  .sl-item--editing .sl-actions {
     opacity: 1;
+  }
+  @media (hover: none) {
+    .sl-actions {
+      opacity: 1;
+    }
+  }
+
+  .sl-edit-button,
+  .sl-delete-button,
+  .sl-save-button,
+  .sl-cancel-button {
+    --mdc-icon-button-size: var(--shopping-list-action-size);
+    --mdc-icon-size: var(--shopping-list-action-icon-size);
+    color: var(--shopping-list-muted);
+  }
+  .sl-save-button {
+    color: var(--shopping-list-accent);
+  }
+
+  .sl-edit-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    color: var(--shopping-list-fg);
+    border: none;
+    border-bottom: 1px solid var(--shopping-list-accent);
+    font: inherit;
+    outline: none;
+    padding: 2px 0;
+  }
+  .sl-edit-input::selection {
+    background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.35);
   }
 
   /* ─── Completed section toggle (collapse mode) ─────────────────── */

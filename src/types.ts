@@ -37,6 +37,10 @@ export interface ShoppingListCardConfig extends LovelaceCardConfig {
   /** Where to render the "add item" input row. Defaults to "bottom". */
   add_input_position?: AddInputPosition;
   add_button_label?: string;
+  /** Allow inline renaming of items via a pencil button. Defaults to true. */
+  enable_edit?: boolean;
+  /** Allow removing items via the trailing close button. Defaults to true. */
+  enable_remove?: boolean;
   empty_message?: string;
   sort?: SortMode;
   /** Free-form CSS appended to the card's shadow root for power users / theming. */

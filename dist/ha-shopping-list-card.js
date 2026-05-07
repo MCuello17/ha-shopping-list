@@ -104,6 +104,8 @@ const DEFAULT_CONFIG = {
     show_add_input: true,
     add_input_position: "bottom",
     add_button_label: "Add",
+    enable_edit: true,
+    enable_remove: true,
     empty_message: "Nothing on the list",
     sort: "manual",
 };
@@ -147,9 +149,15 @@ const DEFAULT_CONFIG = {
  *   .sl-list                — <ul> wrapping items
  *   .sl-item                — single item row
  *   .sl-item--completed     — modifier on completed items
+ *   .sl-item--editing       — modifier on item being inline-edited
  *   .sl-checkbox            — item checkbox
- *   .sl-summary             — item label text
+ *   .sl-summary             — item label text (read-only mode)
+ *   .sl-edit-input          — inline rename input (edit mode)
+ *   .sl-actions             — wrapper for per-item action buttons
+ *   .sl-edit-button         — pencil button to enter edit mode
  *   .sl-delete-button       — per-item delete button
+ *   .sl-save-button         — confirm rename (edit mode)
+ *   .sl-cancel-button       — abort rename (edit mode)
  *   .sl-add-row             — add-item row (with position modifier)
  *     .sl-add-row--top      — modifier when rendered above the list
  *     .sl-add-row--bottom   — modifier when rendered below the list
@@ -200,6 +208,11 @@ const cardStyles = i$5 `
     --shopping-list-item-padding: 8px 12px;
     --shopping-list-item-gap: 12px;
     --shopping-list-list-gap: 4px;
+
+    /* Per-item actions (edit / delete / save / cancel) */
+    --shopping-list-actions-gap: 2px;
+    --shopping-list-action-size: 32px;
+    --shopping-list-action-icon-size: 18px;
 
     /* Completed items */
     --shopping-list-completed-fg: var(--disabled-text-color, #bdbdbd);
@@ -338,16 +351,55 @@ const cardStyles = i$5 `
     word-break: break-word;
   }
 
-  .sl-delete-button {
-    --mdc-icon-button-size: 32px;
-    --mdc-icon-size: 18px;
-    color: var(--shopping-list-muted);
+  /* ─── Per-item action buttons (edit / delete / save / cancel) ─── */
+  .sl-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--shopping-list-actions-gap);
+    flex-shrink: 0;
+    /* Hidden by default; revealed on hover or focus on devices that
+       support hover. The @media (hover: none) block below makes them
+       always visible on touch devices (phones, tablets, HA's mobile
+       dashboards) where hover is not a viable affordance. */
     opacity: 0;
     transition: opacity 120ms ease;
   }
-  .sl-item:hover .sl-delete-button,
-  .sl-item:focus-within .sl-delete-button {
+  .sl-item:hover .sl-actions,
+  .sl-item:focus-within .sl-actions,
+  .sl-item--editing .sl-actions {
     opacity: 1;
+  }
+  @media (hover: none) {
+    .sl-actions {
+      opacity: 1;
+    }
+  }
+
+  .sl-edit-button,
+  .sl-delete-button,
+  .sl-save-button,
+  .sl-cancel-button {
+    --mdc-icon-button-size: var(--shopping-list-action-size);
+    --mdc-icon-size: var(--shopping-list-action-icon-size);
+    color: var(--shopping-list-muted);
+  }
+  .sl-save-button {
+    color: var(--shopping-list-accent);
+  }
+
+  .sl-edit-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    color: var(--shopping-list-fg);
+    border: none;
+    border-bottom: 1px solid var(--shopping-list-accent);
+    font: inherit;
+    outline: none;
+    padding: 2px 0;
+  }
+  .sl-edit-input::selection {
+    background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.35);
   }
 
   /* ─── Completed section toggle (collapse mode) ─────────────────── */
@@ -483,6 +535,8 @@ const SCHEMA = [
         flatten: true,
         schema: [
             { name: "sort", selector: { select: { mode: "dropdown", options: SORT_OPTIONS } } },
+            { name: "enable_edit", selector: { boolean: {} } },
+            { name: "enable_remove", selector: { boolean: {} } },
             { name: "empty_message", selector: { text: {} } },
         ],
     },
@@ -535,6 +589,8 @@ let ShoppingListCardEditor = class ShoppingListCardEditor extends i$2 {
                 add_button_label: "Add button label",
                 empty_message: "Empty list message",
                 sort: "Sort order",
+                enable_edit: "Allow editing items",
+                enable_remove: "Allow removing items",
             };
             return map[schema.name] ?? schema.name;
         };
@@ -545,10 +601,15 @@ let ShoppingListCardEditor = class ShoppingListCardEditor extends i$2 {
     render() {
         if (!this.hass || !this._config)
             return b ``;
+        // Merge defaults under the user's config so toggles/selects reflect
+        // the card's actual behavior even when the user hasn't explicitly set
+        // a field. Saved YAML stays clean — see `_formValueChanged` for the
+        // diff-based persistence logic.
+        const formData = { ...DEFAULT_CONFIG, ...this._config };
         return b `
       <ha-form
         .hass=${this.hass}
-        .data=${this._config}
+        .data=${formData}
         .schema=${SCHEMA}
         .computeLabel=${this._labelFor}
         @value-changed=${this._formValueChanged}
@@ -579,7 +640,23 @@ let ShoppingListCardEditor = class ShoppingListCardEditor extends i$2 {
         if (!this._config)
             return;
         const data = ev.detail.value;
-        const newConfig = { ...this._config, ...data };
+        // Persist only fields the user actually intends to set:
+        //   - Fields already present in the user's existing config (update)
+        //   - Fields whose new value differs from the built-in default
+        //
+        // ha-form sends back values for every visible field — including ones
+        // we merged in for display purposes. Without this filter, the very
+        // first toggle would balloon the saved YAML with all defaults.
+        const existing = this._config;
+        const defaults = DEFAULT_CONFIG;
+        const newConfig = { ...this._config };
+        for (const [key, value] of Object.entries(data)) {
+            const wasExplicit = key in existing;
+            const matchesDefault = value === defaults[key];
+            if (wasExplicit || !matchesDefault) {
+                newConfig[key] = value;
+            }
+        }
         // Drop the deprecated boolean once the user touches the editor so we
         // don't keep two sources of truth in the saved YAML.
         if ("show_completed" in newConfig)
@@ -689,6 +766,9 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
         this._loading = false;
         this._draft = "";
         this._completedExpanded = false;
+        this._editDraft = "";
+        /** Set true on edit start; consumed by `updated()` to focus the input once. */
+        this._focusEditOnUpdate = false;
         this._toggleCompletedExpanded = () => {
             this._completedExpanded = !this._completedExpanded;
         };
@@ -723,6 +803,14 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
     }
     updated(changed) {
         super.updated(changed);
+        if (this._focusEditOnUpdate) {
+            const input = this.renderRoot.querySelector(".sl-edit-input");
+            if (input) {
+                input.focus();
+                input.select();
+                this._focusEditOnUpdate = false;
+            }
+        }
         const entity = this._config?.entity;
         if (!entity || !this.hass)
             return;
@@ -805,6 +893,48 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
             await this.hass.callService("todo", "remove_item", {
                 entity_id: entity,
                 item: item.uid,
+            });
+        }
+        catch (err) {
+            this._error = err instanceof Error ? err.message : String(err);
+        }
+    }
+    /* ─── Inline edit ──────────────────────────────────────────────────── */
+    _startEdit(item) {
+        this._editingUid = item.uid;
+        this._editDraft = item.summary;
+        this._focusEditOnUpdate = true;
+    }
+    _cancelEdit() {
+        this._editingUid = undefined;
+        this._editDraft = "";
+    }
+    /**
+     * Commit a rename. Safe to call multiple times for the same item — once
+     * the rename completes (or the call is no-op'd) `_editingUid` is cleared
+     * so a stray late blur won't re-fire the service.
+     */
+    async _renameItem(item, newName) {
+        if (this._editingUid !== item.uid)
+            return;
+        const trimmed = newName.trim();
+        if (!trimmed || trimmed === item.summary) {
+            this._cancelEdit();
+            return;
+        }
+        const entity = this._config?.entity;
+        if (!entity || !this.hass) {
+            this._cancelEdit();
+            return;
+        }
+        // Clear editing state before the await so a blur fired by the DOM
+        // teardown can't trigger a second service call.
+        this._cancelEdit();
+        try {
+            await this.hass.callService("todo", "update_item", {
+                entity_id: entity,
+                item: item.uid,
+                rename: trimmed,
             });
         }
         catch (err) {
@@ -942,11 +1072,23 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
     `;
     }
     _renderItem(item) {
+        const cfg = this._config;
         const completed = item.status === "completed";
+        const isEditing = this._editingUid === item.uid;
+        const enableEdit = cfg.enable_edit !== false;
+        const enableRemove = cfg.enable_remove !== false;
+        // Used on save/cancel buttons to suppress the implicit focus shift —
+        // otherwise mousedown moves focus off the input which fires `blur`,
+        // which would race the explicit click handler.
+        const suppressBlur = (ev) => ev.preventDefault();
         return b `
       <li
-        class="sl-item ${completed ? "sl-item--completed" : ""}"
+        class="sl-item ${completed ? "sl-item--completed" : ""} ${isEditing
+            ? "sl-item--editing"
+            : ""}"
         @click=${(ev) => {
+            if (isEditing)
+                return;
             // Avoid double-toggle when clicking the checkbox itself.
             if (ev.target.tagName === "HA-CHECKBOX")
                 return;
@@ -956,19 +1098,94 @@ let ShoppingListCard = class ShoppingListCard extends i$2 {
         <ha-checkbox
           class="sl-checkbox"
           .checked=${completed}
+          ?disabled=${isEditing}
           @change=${() => this._toggleItem(item)}
         ></ha-checkbox>
-        <span class="sl-summary">${item.summary}</span>
-        <ha-icon-button
-          class="sl-delete-button"
-          .label=${"Remove"}
-          @click=${(ev) => {
-            ev.stopPropagation();
-            void this._removeItem(item);
-        }}
-        >
-          <ha-icon icon="mdi:close"></ha-icon>
-        </ha-icon-button>
+
+        ${isEditing
+            ? b `<input
+              class="sl-edit-input"
+              type="text"
+              .value=${this._editDraft}
+              aria-label="Edit item"
+              @click=${(ev) => ev.stopPropagation()}
+              @input=${(ev) => {
+                this._editDraft = ev.target.value;
+            }}
+              @keydown=${(ev) => {
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    void this._renameItem(item, this._editDraft);
+                }
+                else if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    this._cancelEdit();
+                }
+            }}
+              @blur=${() => {
+                // Commit on blur (e.g. user clicks elsewhere on the page).
+                // Save/cancel buttons preventDefault on mousedown so they
+                // don't trigger this path.
+                if (this._editingUid === item.uid) {
+                    void this._renameItem(item, this._editDraft);
+                }
+            }}
+            />`
+            : b `<span class="sl-summary">${item.summary}</span>`}
+
+        <div class="sl-actions">
+          ${isEditing
+            ? b `
+                <ha-icon-button
+                  class="sl-save-button"
+                  .label=${"Save"}
+                  @mousedown=${suppressBlur}
+                  @click=${(ev) => {
+                ev.stopPropagation();
+                void this._renameItem(item, this._editDraft);
+            }}
+                >
+                  <ha-icon icon="mdi:check"></ha-icon>
+                </ha-icon-button>
+                <ha-icon-button
+                  class="sl-cancel-button"
+                  .label=${"Cancel"}
+                  @mousedown=${suppressBlur}
+                  @click=${(ev) => {
+                ev.stopPropagation();
+                this._cancelEdit();
+            }}
+                >
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </ha-icon-button>
+              `
+            : b `
+                ${enableEdit
+                ? b `<ha-icon-button
+                      class="sl-edit-button"
+                      .label=${"Edit"}
+                      @click=${(ev) => {
+                    ev.stopPropagation();
+                    this._startEdit(item);
+                }}
+                    >
+                      <ha-icon icon="mdi:pencil"></ha-icon>
+                    </ha-icon-button>`
+                : A}
+                ${enableRemove
+                ? b `<ha-icon-button
+                      class="sl-delete-button"
+                      .label=${"Remove"}
+                      @click=${(ev) => {
+                    ev.stopPropagation();
+                    void this._removeItem(item);
+                }}
+                    >
+                      <ha-icon icon="mdi:close"></ha-icon>
+                    </ha-icon-button>`
+                : A}
+              `}
+        </div>
       </li>
     `;
     }
@@ -1049,6 +1266,12 @@ __decorate([
 __decorate([
     r()
 ], ShoppingListCard.prototype, "_completedExpanded", void 0);
+__decorate([
+    r()
+], ShoppingListCard.prototype, "_editingUid", void 0);
+__decorate([
+    r()
+], ShoppingListCard.prototype, "_editDraft", void 0);
 ShoppingListCard = __decorate([
     t$2(CARD_TAG)
 ], ShoppingListCard);

@@ -51,9 +51,13 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   @state() private _error?: string;
   @state() private _draft = "";
   @state() private _completedExpanded = false;
+  @state() private _editingUid?: string;
+  @state() private _editDraft = "";
 
   private _unsub?: () => void;
   private _lastEntity?: string;
+  /** Set true on edit start; consumed by `updated()` to focus the input once. */
+  private _focusEditOnUpdate = false;
 
   static styles = cardStyles;
 
@@ -95,6 +99,16 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
 
   protected updated(changed: PropertyValues): void {
     super.updated(changed);
+
+    if (this._focusEditOnUpdate) {
+      const input = this.renderRoot.querySelector(".sl-edit-input") as HTMLInputElement | null;
+      if (input) {
+        input.focus();
+        input.select();
+        this._focusEditOnUpdate = false;
+      }
+    }
+
     const entity = this._config?.entity;
     if (!entity || !this.hass) return;
     if (entity !== this._lastEntity) {
@@ -177,6 +191,54 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
       await this.hass.callService("todo", "remove_item", {
         entity_id: entity,
         item: item.uid,
+      });
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  /* ─── Inline edit ──────────────────────────────────────────────────── */
+
+  private _startEdit(item: TodoItem): void {
+    this._editingUid = item.uid;
+    this._editDraft = item.summary;
+    this._focusEditOnUpdate = true;
+  }
+
+  private _cancelEdit(): void {
+    this._editingUid = undefined;
+    this._editDraft = "";
+  }
+
+  /**
+   * Commit a rename. Safe to call multiple times for the same item — once
+   * the rename completes (or the call is no-op'd) `_editingUid` is cleared
+   * so a stray late blur won't re-fire the service.
+   */
+  private async _renameItem(item: TodoItem, newName: string): Promise<void> {
+    if (this._editingUid !== item.uid) return;
+
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === item.summary) {
+      this._cancelEdit();
+      return;
+    }
+
+    const entity = this._config?.entity;
+    if (!entity || !this.hass) {
+      this._cancelEdit();
+      return;
+    }
+
+    // Clear editing state before the await so a blur fired by the DOM
+    // teardown can't trigger a second service call.
+    this._cancelEdit();
+
+    try {
+      await this.hass.callService("todo", "update_item", {
+        entity_id: entity,
+        item: item.uid,
+        rename: trimmed,
       });
     } catch (err) {
       this._error = err instanceof Error ? err.message : String(err);
@@ -336,11 +398,24 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
   }
 
   private _renderItem(item: TodoItem): TemplateResult {
+    const cfg = this._config!;
     const completed = item.status === "completed";
+    const isEditing = this._editingUid === item.uid;
+    const enableEdit = cfg.enable_edit !== false;
+    const enableRemove = cfg.enable_remove !== false;
+
+    // Used on save/cancel buttons to suppress the implicit focus shift —
+    // otherwise mousedown moves focus off the input which fires `blur`,
+    // which would race the explicit click handler.
+    const suppressBlur = (ev: MouseEvent) => ev.preventDefault();
+
     return html`
       <li
-        class="sl-item ${completed ? "sl-item--completed" : ""}"
+        class="sl-item ${completed ? "sl-item--completed" : ""} ${isEditing
+          ? "sl-item--editing"
+          : ""}"
         @click=${(ev: MouseEvent) => {
+          if (isEditing) return;
           // Avoid double-toggle when clicking the checkbox itself.
           if ((ev.target as HTMLElement).tagName === "HA-CHECKBOX") return;
           void this._toggleItem(item);
@@ -349,19 +424,93 @@ export class ShoppingListCard extends LitElement implements LovelaceCard {
         <ha-checkbox
           class="sl-checkbox"
           .checked=${completed}
+          ?disabled=${isEditing}
           @change=${() => this._toggleItem(item)}
         ></ha-checkbox>
-        <span class="sl-summary">${item.summary}</span>
-        <ha-icon-button
-          class="sl-delete-button"
-          .label=${"Remove"}
-          @click=${(ev: MouseEvent) => {
-            ev.stopPropagation();
-            void this._removeItem(item);
-          }}
-        >
-          <ha-icon icon="mdi:close"></ha-icon>
-        </ha-icon-button>
+
+        ${isEditing
+          ? html`<input
+              class="sl-edit-input"
+              type="text"
+              .value=${this._editDraft}
+              aria-label="Edit item"
+              @click=${(ev: Event) => ev.stopPropagation()}
+              @input=${(ev: Event) => {
+                this._editDraft = (ev.target as HTMLInputElement).value;
+              }}
+              @keydown=${(ev: KeyboardEvent) => {
+                if (ev.key === "Enter") {
+                  ev.preventDefault();
+                  void this._renameItem(item, this._editDraft);
+                } else if (ev.key === "Escape") {
+                  ev.preventDefault();
+                  this._cancelEdit();
+                }
+              }}
+              @blur=${() => {
+                // Commit on blur (e.g. user clicks elsewhere on the page).
+                // Save/cancel buttons preventDefault on mousedown so they
+                // don't trigger this path.
+                if (this._editingUid === item.uid) {
+                  void this._renameItem(item, this._editDraft);
+                }
+              }}
+            />`
+          : html`<span class="sl-summary">${item.summary}</span>`}
+
+        <div class="sl-actions">
+          ${isEditing
+            ? html`
+                <ha-icon-button
+                  class="sl-save-button"
+                  .label=${"Save"}
+                  @mousedown=${suppressBlur}
+                  @click=${(ev: MouseEvent) => {
+                    ev.stopPropagation();
+                    void this._renameItem(item, this._editDraft);
+                  }}
+                >
+                  <ha-icon icon="mdi:check"></ha-icon>
+                </ha-icon-button>
+                <ha-icon-button
+                  class="sl-cancel-button"
+                  .label=${"Cancel"}
+                  @mousedown=${suppressBlur}
+                  @click=${(ev: MouseEvent) => {
+                    ev.stopPropagation();
+                    this._cancelEdit();
+                  }}
+                >
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </ha-icon-button>
+              `
+            : html`
+                ${enableEdit
+                  ? html`<ha-icon-button
+                      class="sl-edit-button"
+                      .label=${"Edit"}
+                      @click=${(ev: MouseEvent) => {
+                        ev.stopPropagation();
+                        this._startEdit(item);
+                      }}
+                    >
+                      <ha-icon icon="mdi:pencil"></ha-icon>
+                    </ha-icon-button>`
+                  : nothing}
+                ${enableRemove
+                  ? html`<ha-icon-button
+                      class="sl-delete-button"
+                      .label=${"Remove"}
+                      @click=${(ev: MouseEvent) => {
+                        ev.stopPropagation();
+                        void this._removeItem(item);
+                      }}
+                    >
+                      <ha-icon icon="mdi:close"></ha-icon>
+                    </ha-icon-button>`
+                  : nothing}
+              `}
+        </div>
       </li>
     `;
   }

@@ -12,6 +12,8 @@ export const DEFAULT_CONFIG = {
   show_add_input: true,
   add_input_position: "bottom" as const,
   add_button_label: "Add",
+  enable_edit: true,
+  enable_remove: true,
   empty_message: "Nothing on the list",
   sort: "manual" as const,
 };

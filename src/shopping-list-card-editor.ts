@@ -2,7 +2,7 @@ import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, LovelaceCardEditor } from "./ha-types.js";
 
-import { EDITOR_TAG } from "./const.js";
+import { DEFAULT_CONFIG, EDITOR_TAG } from "./const.js";
 import type {
   AddInputPosition,
   CompletedDisplay,
@@ -77,6 +77,8 @@ const SCHEMA: SchemaItem[] = [
     flatten: true,
     schema: [
       { name: "sort", selector: { select: { mode: "dropdown", options: SORT_OPTIONS } } },
+      { name: "enable_edit", selector: { boolean: {} } },
+      { name: "enable_remove", selector: { boolean: {} } },
       { name: "empty_message", selector: { text: {} } },
     ],
   },
@@ -182,10 +184,16 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
   protected render(): TemplateResult {
     if (!this.hass || !this._config) return html``;
 
+    // Merge defaults under the user's config so toggles/selects reflect
+    // the card's actual behavior even when the user hasn't explicitly set
+    // a field. Saved YAML stays clean — see `_formValueChanged` for the
+    // diff-based persistence logic.
+    const formData = { ...DEFAULT_CONFIG, ...this._config };
+
     return html`
       <ha-form
         .hass=${this.hass}
-        .data=${this._config}
+        .data=${formData}
         .schema=${SCHEMA}
         .computeLabel=${this._labelFor}
         @value-changed=${this._formValueChanged}
@@ -228,6 +236,8 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
       add_button_label: "Add button label",
       empty_message: "Empty list message",
       sort: "Sort order",
+      enable_edit: "Allow editing items",
+      enable_remove: "Allow removing items",
     };
     return map[schema.name] ?? schema.name;
   };
@@ -240,7 +250,26 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
       completed?: CompletedDisplay;
       add_input_position?: AddInputPosition;
     };
-    const newConfig: ShoppingListCardConfig = { ...this._config, ...data };
+
+    // Persist only fields the user actually intends to set:
+    //   - Fields already present in the user's existing config (update)
+    //   - Fields whose new value differs from the built-in default
+    //
+    // ha-form sends back values for every visible field — including ones
+    // we merged in for display purposes. Without this filter, the very
+    // first toggle would balloon the saved YAML with all defaults.
+    const existing = this._config as Record<string, unknown>;
+    const defaults = DEFAULT_CONFIG as Record<string, unknown>;
+    const newConfig: ShoppingListCardConfig = { ...this._config };
+
+    for (const [key, value] of Object.entries(data)) {
+      const wasExplicit = key in existing;
+      const matchesDefault = value === defaults[key];
+      if (wasExplicit || !matchesDefault) {
+        (newConfig as Record<string, unknown>)[key] = value;
+      }
+    }
+
     // Drop the deprecated boolean once the user touches the editor so we
     // don't keep two sources of truth in the saved YAML.
     if ("show_completed" in newConfig) delete newConfig.show_completed;
