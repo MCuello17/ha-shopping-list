@@ -352,6 +352,12 @@ export const cardStyles = css`
   }
 
   .sl-action-button {
+    /* HA's modern <ha-icon-button> reads --ha-icon-button-size for the
+       hit area; the old --mdc-icon-button-size token is a no-op on
+       current HA. We set both so the card still works on older HA
+       versions that still honour the MDC token. --mdc-icon-size is
+       consumed by <ha-svg-icon>/<ha-icon> for the glyph itself. */
+    --ha-icon-button-size: var(--shopping-list-action-size);
     --mdc-icon-button-size: var(--shopping-list-action-size);
     --mdc-icon-size: var(--shopping-list-action-icon-size);
     color: var(--shopping-list-muted);
