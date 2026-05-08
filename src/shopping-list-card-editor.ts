@@ -1,4 +1,4 @@
-import { LitElement, html, css, type TemplateResult } from "lit";
+import { LitElement, html, css, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, LovelaceCardEditor } from "./ha-types.js";
 
@@ -51,6 +51,14 @@ type SchemaItem = LeafSchemaItem | ExpandableSchemaItem;
  * and gives us a working editor instead of an inert element.
  */
 const CODE_EDITOR_MODE = "yaml" as const;
+
+/**
+ * Tight vertical gap between top-level sections (the ha-form expandable
+ * groups + our custom Categories / Customization details blocks).
+ * Used both as our own margin-top on the custom blocks and injected
+ * into ha-form's shadow root to override its default 24px row gap.
+ */
+const SECTION_GAP_PX = 8;
 
 const SORT_OPTIONS = [
   { value: "manual", label: "Manual (HA order)" },
@@ -172,6 +180,40 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
     this._config = config;
   }
 
+  protected updated(changed: PropertyValues): void {
+    super.updated(changed);
+    this._patchHaFormSpacing();
+  }
+
+  /**
+   * `<ha-form>` puts a 24px gap between every section in its shadow DOM
+   * (`.root > *:not([own-margin]):not(:last-child) { margin-bottom: 24px }`),
+   * which is wider than what we want for this editor and can't be
+   * overridden from outside via normal CSS — only the root itself is
+   * exposed as a `::part`, not its children, and there's no CSS
+   * variable to hook.
+   *
+   * We pierce the encapsulation deliberately, once per ha-form
+   * instance, by appending a small stylesheet to its shadow root. The
+   * injection is idempotent (gated on a marker attribute) and only
+   * affects the *outer* form because nested ha-form instances inside
+   * each `ha-form-expandable` have their own isolated shadow roots.
+   *
+   * Worst case if HA renames `.root` in a future release: sections
+   * fall back to the upstream 24px spacing — no functional breakage.
+   */
+  private _patchHaFormSpacing(): void {
+    for (const form of this.renderRoot.querySelectorAll("ha-form")) {
+      const root = form.shadowRoot;
+      if (!root) continue;
+      if (root.querySelector("style[data-sl-spacing]")) continue;
+      const style = document.createElement("style");
+      style.setAttribute("data-sl-spacing", "");
+      style.textContent = `.root > *:not([own-margin]):not(:last-child) { margin-bottom: ${SECTION_GAP_PX}px !important; }`;
+      root.appendChild(style);
+    }
+  }
+
   static styles = css`
     :host {
       display: block;
@@ -181,13 +223,17 @@ export class ShoppingListCardEditor extends LitElement implements LovelaceCardEd
     }
     /* Visual match for the Customization section so it sits naturally
        below HA's native ha-form expandable groups.
-       Background is intentionally transparent — HA's own expandables
-       (rendered by ha-form for "expandable" schema items) inherit the
-       parent dialog background, and setting our own card-background
-       here makes us visibly mismatch against them in dark themes. */
+
+       - Background is transparent: HA's own expandables (rendered by
+         ha-form for "expandable" schema items) inherit the parent
+         dialog background, so any explicit color visibly mismatches.
+       - margin-top is the same SECTION_GAP_PX value injected into
+         ha-form's shadow root by _patchHaFormSpacing, so every section
+         (HA's expandables + our custom blocks) sits the same distance
+         apart. */
     .customization {
       display: block;
-      margin-top: 8px;
+      margin-top: ${unsafeCSS(`${SECTION_GAP_PX}px`)};
       border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
       border-radius: 8px;
       background: transparent;
